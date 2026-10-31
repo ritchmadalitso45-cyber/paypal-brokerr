@@ -217,7 +217,7 @@ function Topbar({ tab, setTab }) {
           <path d="M7 8h6a3 3 0 0 1 0 6H9l-2 6" stroke="#009cde" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
           <path d="M10 14h5a3 3 0 0 1 0 6H11" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" opacity="0.7"/>
         </svg>
-        <span className="topbar-logo-name">Pay<span>Pilot</span></span>
+        <span className="topbar-logo-name">Paypal<span>Broker</span></span>
       </div>
 
       <ul className="topbar-nav">
@@ -242,8 +242,8 @@ function Topbar({ tab, setTab }) {
           <Icon.Plus /> New invoice
         </button>
         <button className="user-chip">
-          <div className="user-avatar">JB</div>
-          John Baker
+          <div className="user-avatar">MD</div>
+          Madalitso Ritch
           <Icon.ChevronDown />
         </button>
       </div>
@@ -840,7 +840,7 @@ function Footer() {
       <div className="footer-inner">
         <div className="footer-grid">
           <div>
-            <div className="footer-brand-name">Pay<span>Pilot</span></div>
+            <div className="footer-brand-name">Paypal<span>Broker</span></div>
             <div className="footer-brand-desc">
               AI-powered payment operations for small businesses.
               Stop chasing invoices. Focus on growing.
@@ -860,8 +860,7 @@ function Footer() {
           ))}
         </div>
         <div className="footer-bottom">
-          <span>© 2026 PayPilot · Built for the PayPal Developer Hackathon</span>
-          <span>Deployed on Render</span>
+          <span>© 2026 PaypalBroker  all rights reserved</span>
         </div>
       </div>
     </footer>
