@@ -1,6 +1,346 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import './App.css'
+import { useAuth } from './hooks/useAuth'
 /* eslint-disable react/prop-types */
+
+/* Password strength helper */
+function pwStrength(pw) {
+  if (!pw) return 0
+  let score = 0
+  if (pw.length >= 8)  score++
+  if (/[A-Z]/.test(pw)) score++
+  if (/[0-9]/.test(pw)) score++
+  if (/[^A-Za-z0-9]/.test(pw)) score++
+  return score
+}
+const PW_LABELS = ['','Weak','Fair','Good','Strong']
+const PW_CLASS  = ['','weak','fair','good','strong']
+
+/* ── AuthPanel (left branding strip) ─────────────────────────────── */
+function AuthBrandPanel() {
+  return (
+    <aside className="auth-panel" aria-hidden="true">
+      <div className="auth-panel-logo">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <rect width="24" height="24" rx="6" fill="#003087"/>
+          <path d="M7 8h6a3 3 0 0 1 0 6H9l-2 6" stroke="#009cde" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M10 14h5a3 3 0 0 1 0 6H11" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" opacity="0.7"/>
+        </svg>
+        <span className="auth-panel-logo-name">Paypal<span>Broker</span></span>
+      </div>
+
+      <p className="auth-panel-tagline">
+        Payment operations,<br /><b>without the busywork</b>
+      </p>
+      <p className="auth-panel-sub">
+        Invoice visibility, automated reminders, transaction screening and
+        connected workflows — all in one place.
+      </p>
+
+      <div className="auth-features">
+        {[
+          { icon: <Icon.FileText />, title:'Invoice management', desc:'Create, send and chase overdue invoices with approval-gated actions.' },
+          { icon: <Icon.Shield />,   title:'Fraud & anomaly alerts', desc:'Velocity, geography and refund-spike screening flags records for review.' },
+          { icon: <Icon.Zap />,      title:'Automated workflows', desc:'Trigger Zapier, Slack and CRM actions on payment events.' },
+          { icon: <Icon.Bot />,      title:'AI payment assistant', desc:'Ask questions in plain English about your transactions and invoices.' },
+        ].map(f => (
+          <div key={f.title} className="auth-feature">
+            <div className="auth-feature-icon">{f.icon}</div>
+            <div className="auth-feature-text">
+              <strong>{f.title}</strong>
+              {f.desc}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="auth-panel-footer">
+        One deployment represents one merchant.<br />
+        Service keys are kept server-side and never sent to the browser.
+      </p>
+    </aside>
+  )
+}
+
+/* ── Sign In ──────────────────────────────────────────────────────── */
+function SignIn({ auth, onSuccess, goSignUp }) {
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError]       = useState('')
+  const [loading, setLoading]   = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!email || !password) { setError('Please fill in all fields.'); return }
+    setLoading(true)
+    setError('')
+    const res = await auth.signIn(email, password)
+    setLoading(false)
+    if (!res.ok) setError(res.error)
+    else onSuccess()
+  }
+
+  return (
+    <div className="auth-root">
+      <AuthBrandPanel />
+      <div className="auth-form-area">
+        <div className="auth-card">
+          <h1 className="auth-card-title">Welcome back</h1>
+          <p className="auth-card-sub">
+            Don&apos;t have an account?{' '}
+            <a onClick={goSignUp} role="button" tabIndex={0} onKeyDown={e => e.key==='Enter'&&goSignUp()}>
+              Create one
+            </a>
+          </p>
+
+          <div className="auth-demo-hint">
+            <strong>New here?</strong> Create an account using the link above.<br />
+            Admin accounts have full access. Viewer accounts are read-only.
+          </div>
+
+          {error && (
+            <div className="auth-error" role="alert">
+              <Icon.AlertTriangle /> {error}
+            </div>
+          )}
+
+          <form onSubmit={submit} noValidate>
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="si-email">Email address</label>
+              <input
+                id="si-email"
+                type="email"
+                className={`auth-input ${error ? 'err' : ''}`}
+                placeholder="you@business.com"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError('') }}
+                autoComplete="email"
+                autoFocus
+                required
+              />
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="si-password">Password</label>
+              <input
+                id="si-password"
+                type="password"
+                className={`auth-input ${error ? 'err' : ''}`}
+                placeholder="Your password"
+                value={password}
+                onChange={e => { setPassword(e.target.value); setError('') }}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            <button type="submit" className="auth-submit" disabled={loading}>
+              {loading
+                ? <><span className="typing-dots" style={{display:'inline-flex',gap:3}}><span/><span/><span/></span> Signing in…</>
+                : 'Sign in'}
+            </button>
+          </form>
+
+          <p className="auth-terms">
+            By signing in you agree to our{' '}
+            <a>Terms of Service</a> and <a>Privacy Policy</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Sign Up ──────────────────────────────────────────────────────── */
+function SignUp({ auth, onSuccess, goSignIn }) {
+  const [form, setForm] = useState({
+    firstName: '', lastName: '', email: '', password: '', confirm: '', role: 'admin'
+  })
+  const [errors, setErrors] = useState({})
+  const [serverError, setServerError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const strength = pwStrength(form.password)
+
+  const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }))
+
+  const validate = () => {
+    const e = {}
+    if (!form.firstName.trim()) e.firstName = 'Required'
+    if (!form.lastName.trim())  e.lastName  = 'Required'
+    if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email)) e.email = 'Valid email required'
+    if (form.password.length < 8) e.password = 'At least 8 characters'
+    if (form.password !== form.confirm) e.confirm = 'Passwords do not match'
+    return e
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setServerError('')
+    const v = validate()
+    if (Object.keys(v).length) { setErrors(v); return }
+    setLoading(true)
+    const res = await auth.signUp(form)
+    setLoading(false)
+    if (!res.ok) setServerError(res.error)
+    else onSuccess()
+  }
+
+  const field = (key) => ({
+    className: `auth-input ${errors[key] ? 'err' : ''}`,
+    onChange: (e) => { set(key)(e); setErrors(er => ({ ...er, [key]: '' })); setServerError('') },
+  })
+
+  return (
+    <div className="auth-root">
+      <AuthBrandPanel />
+      <div className="auth-form-area">
+        <div className="auth-card">
+          <h1 className="auth-card-title">Create your account</h1>
+          <p className="auth-card-sub">
+            Already have an account?{' '}
+            <a onClick={goSignIn} role="button" tabIndex={0} onKeyDown={e => e.key==='Enter'&&goSignIn()}>
+              Sign in
+            </a>
+          </p>
+
+          <form onSubmit={submit} noValidate>
+            {serverError && (
+              <div className="auth-error" role="alert">
+                <Icon.AlertTriangle /> {serverError}
+              </div>
+            )}
+
+            {/* Role selection — aligns with doc's two roles */}
+            <div style={{marginBottom:6}}>
+              <span className="auth-label" id="role-group-label">Account role</span>
+            </div>
+            <div className="auth-role-grid" role="group" aria-labelledby="role-group-label">
+              {[
+                {
+                  value: 'admin',
+                  name: 'Business owner',
+                  desc: 'Full access — invoices, approvals, workflows, audit',
+                  icon: <Icon.User />,
+                },
+                {
+                  value: 'viewer',
+                  name: 'Readonly operator',
+                  desc: 'View financial data and ask read-only questions',
+                  icon: <Icon.Shield />,
+                },
+              ].map(r => (
+                <div key={r.value} className="auth-role-option">
+                  <input
+                    type="radio"
+                    name="role"
+                    id={`role-${r.value}`}
+                    value={r.value}
+                    checked={form.role === r.value}
+                    onChange={set('role')}
+                  />
+                  <label htmlFor={`role-${r.value}`} className="auth-role-label">
+                    <div className="auth-role-icon">{r.icon}</div>
+                    <span className="auth-role-name">{r.name}</span>
+                    <span className="auth-role-desc">{r.desc}</span>
+                  </label>
+                </div>
+              ))}
+            </div>
+
+            <div className="auth-row">
+              <div className="auth-field">
+                <label className="auth-label" htmlFor="su-first">First name</label>
+                <input
+                  id="su-first"
+                  type="text"
+                  placeholder="Jane"
+                  value={form.firstName}
+                  autoComplete="given-name"
+                  autoFocus
+                  {...field('firstName')}
+                />
+                {errors.firstName && <div style={{fontSize:11,color:'var(--red)',marginTop:4}}>{errors.firstName}</div>}
+              </div>
+              <div className="auth-field">
+                <label className="auth-label" htmlFor="su-last">Last name</label>
+                <input
+                  id="su-last"
+                  type="text"
+                  placeholder="Smith"
+                  value={form.lastName}
+                  autoComplete="family-name"
+                  {...field('lastName')}
+                />
+                {errors.lastName && <div style={{fontSize:11,color:'var(--red)',marginTop:4}}>{errors.lastName}</div>}
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="su-email">Work email</label>
+              <input
+                id="su-email"
+                type="email"
+                placeholder="you@business.com"
+                value={form.email}
+                autoComplete="email"
+                {...field('email')}
+              />
+              {errors.email && <div style={{fontSize:11,color:'var(--red)',marginTop:4}}>{errors.email}</div>}
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="su-pw">Password</label>
+              <input
+                id="su-pw"
+                type="password"
+                placeholder="Min. 8 characters"
+                value={form.password}
+                autoComplete="new-password"
+                {...field('password')}
+              />
+              {form.password && (
+                <div className="pw-strength" aria-label={`Password strength: ${PW_LABELS[strength]}`}>
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className={`pw-bar ${i <= strength ? `filled ${PW_CLASS[strength]}` : ''}`} />
+                  ))}
+                  <span className="pw-label">{PW_LABELS[strength]}</span>
+                </div>
+              )}
+              {errors.password && <div style={{fontSize:11,color:'var(--red)',marginTop:4}}>{errors.password}</div>}
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="su-confirm">Confirm password</label>
+              <input
+                id="su-confirm"
+                type="password"
+                placeholder="Repeat password"
+                value={form.confirm}
+                autoComplete="new-password"
+                {...field('confirm')}
+              />
+              {errors.confirm && <div style={{fontSize:11,color:'var(--red)',marginTop:4}}>{errors.confirm}</div>}
+            </div>
+
+            <button type="submit" className="auth-submit" disabled={loading}>
+              {loading
+                ? <><span className="typing-dots" style={{display:'inline-flex',gap:3}}><span/><span/><span/></span> Creating account…</>
+                : 'Create account'}
+            </button>
+          </form>
+
+          <p className="auth-terms">
+            By creating an account you agree to our{' '}
+            <a>Terms of Service</a> and <a>Privacy Policy</a>.
+            Admin keys are stored server-side only.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 /* ── Inline SVG icons (no emoji) ──────────────────────────────────── */
 const Icon = {
@@ -207,8 +547,15 @@ function Toasts({ list }) {
 }
 
 /* ── Topbar ───────────────────────────────────────────────────────── */
-function Topbar({ tab, setTab }) {
+function Topbar({ tab, setTab, user, onSignOut }) {
+  const isAdmin = user?.role === 'admin'
+  // Viewer can see all tabs but cannot trigger mutations (handled inside each card)
   const NAV = ['Dashboard','Transactions','Invoices','Alerts','Workflows']
+
+  const initials = user?.name
+    ? user.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    : 'U'
+
   return (
     <header className="topbar">
       <div className="topbar-logo">
@@ -238,13 +585,23 @@ function Topbar({ tab, setTab }) {
           <Icon.Bell />
           <span className="notif-dot" />
         </button>
-        <button className="topbar-btn topbar-btn-primary" style={{display:'flex',alignItems:'center',gap:5}}>
-          <Icon.Plus /> New invoice
-        </button>
-        <button className="user-chip">
-          <div className="user-avatar">MD</div>
-          Madalitso Ritch
-          <Icon.ChevronDown />
+
+        {/* Only admins can create invoices per the doc's role model */}
+        {isAdmin && (
+          <button className="topbar-btn topbar-btn-primary" style={{display:'flex',alignItems:'center',gap:5}}>
+            <Icon.Plus /> New invoice
+          </button>
+        )}
+
+        {/* Role badge */}
+        <span className={`badge ${isAdmin ? 'badge-blue' : 'badge-gray'}`} style={{fontSize:10}}>
+          {isAdmin ? 'Admin' : 'Viewer'}
+        </span>
+
+        <button className="user-chip" onClick={onSignOut} title="Sign out" aria-label="Sign out">
+          <div className="user-avatar">{initials}</div>
+          {user?.name || 'User'}
+          <Icon.LogOut />
         </button>
       </div>
     </header>
@@ -261,11 +618,11 @@ function Hero({ onChat }) {
           <h1>Payment operations,<br /><b>without the busywork</b></h1>
           <p className="hero-desc">
             Ask questions in plain English, auto-chase overdue invoices, detect fraud
-            in real time, and connect your payment stack — all from one place.
+            in real time, and connect your payment stack all from one place.
           </p>
           <div className="hero-ctas">
             <button className="btn-cta-primary" onClick={onChat}>Ask the AI copilot</button>
-            <button className="btn-cta-secondary">View documentation</button>
+        
           </div>
           <div className="hero-stats">
             {[
@@ -342,10 +699,12 @@ function KPIStrip() {
 }
 
 /* ── AI Chat ──────────────────────────────────────────────────────── */
-function AIChat({ chatRef }) {
+function AIChat({ chatRef, isAdmin = true }) {
   const INIT = [{
     id: 0, role:'ai',
-    text: "Hi, I'm your payment operations copilot. I can answer questions about your transactions, chase overdue invoices, flag fraud, and automate workflows.\n\nTry: \"Who owes me money?\" or \"Show me yesterday's summary.\"",
+    text: isAdmin
+      ? "Hi, I'm your payment operations copilot. I can answer questions about your transactions, chase overdue invoices, flag fraud, and automate workflows.\n\nTry: \"Who owes me money?\" or \"Show me yesterday's summary.\""
+      : "Hi, I'm your read-only payment assistant. You can ask me about transactions, invoices and alerts.\n\nNote: As a viewer you can't approve actions or create proposals — those require an admin account.",
     ts: now()
   }]
   const [msgs, setMsgs] = useState(INIT)
@@ -576,7 +935,7 @@ function TransactionsCard({ toast }) {
 }
 
 /* ── Overdue Invoices ─────────────────────────────────────────────── */
-function OverdueCard({ toast }) {
+function OverdueCard({ toast, isAdmin = true }) {
   const [done, setDone] = useState([])
   const visible = INVOICES.filter(i => !done.includes(i.id))
 
@@ -584,12 +943,17 @@ function OverdueCard({ toast }) {
     <div className="card">
       <div className="card-head">
         <span className="card-title">Overdue invoices</span>
-        <button
-          className="btn btn-primary"
-          onClick={() => toast('Reminders queued for all 4 clients')}
-        >
-          <Icon.Mail /> Send all reminders
-        </button>
+        {isAdmin && (
+          <button
+            className="btn btn-primary"
+            onClick={() => toast('Reminders queued for all 4 clients')}
+          >
+            <Icon.Mail /> Send all reminders
+          </button>
+        )}
+        {!isAdmin && (
+          <span style={{fontSize:11,color:'var(--text3)'}}>Read-only view</span>
+        )}
       </div>
       <div className="inv-list">
         {visible.length === 0 && (
@@ -608,18 +972,22 @@ function OverdueCard({ toast }) {
               <div className="inv-amount">${inv.amount.toLocaleString()}</div>
               <div className="inv-days">{inv.days}d overdue</div>
             </div>
-            <button
-              className="inv-btn send"
-              onClick={() => toast(`Reminder sent to ${inv.client}`, 'info')}
-              aria-label={`Send reminder to ${inv.client}`}
-              title="Send reminder"
-            ><Icon.Mail /></button>
-            <button
-              className="inv-btn confirm"
-              onClick={() => { setDone(d => [...d, inv.id]); toast(`${inv.client} marked as paid`) }}
-              aria-label={`Mark ${inv.client} as paid`}
-              title="Mark as paid"
-            ><Icon.Check /></button>
+            {isAdmin && (
+              <>
+                <button
+                  className="inv-btn send"
+                  onClick={() => toast(`Reminder sent to ${inv.client}`, 'info')}
+                  aria-label={`Send reminder to ${inv.client}`}
+                  title="Send reminder"
+                ><Icon.Mail /></button>
+                <button
+                  className="inv-btn confirm"
+                  onClick={() => { setDone(d => [...d, inv.id]); toast(`${inv.client} marked as paid`) }}
+                  aria-label={`Mark ${inv.client} as paid`}
+                  title="Mark as paid"
+                ><Icon.Check /></button>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -669,10 +1037,11 @@ function AlertsCard({ toast }) {
 }
 
 /* ── Workflows ────────────────────────────────────────────────────── */
-function WorkflowsCard({ toast }) {
+function WorkflowsCard({ toast, isAdmin = true }) {
   const [wfs, setWfs] = useState(WORKFLOWS)
 
   const toggle = (id) => {
+    if (!isAdmin) { toast('Viewer role cannot configure workflows', 'err'); return }
     setWfs(w => w.map(x => x.id === id ? {...x, on:!x.on} : x))
     const wf = wfs.find(w => w.id === id)
     toast(`${wf.on ? 'Paused' : 'Enabled'}: ${wf.name}`, 'info')
@@ -747,15 +1116,15 @@ function RevenueCard() {
 }
 
 /* ── Sidebar ──────────────────────────────────────────────────────── */
-function Sidebar({ toast }) {
+function Sidebar({ toast, isAdmin = true }) {
   const ACTIONS = [
-    { icon:<Icon.FileText />, label:'Create invoice',  fn:() => toast('Opening invoice builder', 'info') },
-    { icon:<Icon.CreditCard />, label:'Send payment',  fn:() => toast('Opening payment form', 'info') },
-    { icon:<Icon.Download />, label:'Export report',   fn:() => toast('Generating PDF report', 'info') },
-    { icon:<Icon.Shield />, label:'Run fraud scan',    fn:() => toast('Elastic scan initiated', 'info') },
-    { icon:<Icon.Link />, label:'Connect app',         fn:() => toast('Opening Zapier integrations', 'info') },
-    { icon:<Icon.ArrowUpRight />, label:'View payouts',fn:() => toast('Loading payout history', 'info') },
-  ]
+    { icon:<Icon.FileText />, label:'Create invoice',  admin:true,  fn:() => toast('Opening invoice builder', 'info') },
+    { icon:<Icon.CreditCard />, label:'Send payment',  admin:true,  fn:() => toast('Opening payment form', 'info') },
+    { icon:<Icon.Download />, label:'Export report',   admin:false, fn:() => toast('Generating PDF report', 'info') },
+    { icon:<Icon.Shield />, label:'Run fraud scan',    admin:true,  fn:() => toast('Elastic scan initiated', 'info') },
+    { icon:<Icon.Link />, label:'Connect app',         admin:true,  fn:() => toast('Opening Zapier integrations', 'info') },
+    { icon:<Icon.ArrowUpRight />, label:'View payouts',admin:false, fn:() => toast('Loading payout history', 'info') },
+  ].filter(a => isAdmin || !a.admin)
 
   return (
     <aside className="col-side">
@@ -869,9 +1238,12 @@ function Footer() {
 
 /* ── App ──────────────────────────────────────────────────────────── */
 export default function App() {
-  const [tab, setTab] = useState('Dashboard')
-  const [toasts, setToasts] = useState([])
-  const chatRef = useRef(null)
+  const auth = useAuth()
+
+  const [tab, setTab]           = useState('Dashboard')
+  const [authView, setAuthView] = useState('signin') // 'signin' | 'signup'
+  const [toasts, setToasts]     = useState([])
+  const chatRef                 = useRef(null)
 
   const toast = useCallback((msg, type = '') => {
     const id = Date.now()
@@ -884,12 +1256,59 @@ export default function App() {
     setTimeout(() => chatRef.current?.scrollIntoView({ behavior:'smooth', block:'start' }), 80)
   }
 
+  // ── Loading state — Firebase resolving persisted session ───────
+  if (auth.loading) {
+    return (
+      <div style={{
+        minHeight:'100vh', display:'flex', alignItems:'center',
+        justifyContent:'center', background:'var(--bg)', flexDirection:'column', gap:16
+      }}>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+          <rect width="24" height="24" rx="6" fill="#003087"/>
+          <path d="M7 8h6a3 3 0 0 1 0 6H9l-2 6" stroke="#009cde" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <div className="typing-dots">
+          <span /><span /><span />
+        </div>
+      </div>
+    )
+  }
+
+  // ── Auth gate ──────────────────────────────────────────────────
+  if (!auth.user) {
+    if (authView === 'signup') {
+      return (
+        <>
+          <SignUp
+            auth={auth}
+            onSuccess={() => { toast('Account created — welcome to PayPal Broker!') }}
+            goSignIn={() => setAuthView('signin')}
+          />
+          <Toasts list={toasts} />
+        </>
+      )
+    }
+    return (
+      <>
+        <SignIn
+          auth={auth}
+          onSuccess={() => {}}
+          goSignUp={() => setAuthView('signup')}
+        />
+        <Toasts list={toasts} />
+      </>
+    )
+  }
+
+  // ── Viewer restriction: hide mutation actions inline ───────────
+  const isAdmin = auth.user.role === 'admin'
+
   const renderTab = () => {
     const map = {
       Transactions: <div className="page"><TransactionsCard toast={toast} /></div>,
-      Invoices:     <div className="page"><OverdueCard toast={toast} /></div>,
+      Invoices:     <div className="page"><OverdueCard toast={toast} isAdmin={isAdmin} /></div>,
       Alerts:       <div className="page"><AlertsCard toast={toast} /></div>,
-      Workflows:    <div className="page"><WorkflowsCard toast={toast} /></div>,
+      Workflows:    <div className="page"><WorkflowsCard toast={toast} isAdmin={isAdmin} /></div>,
     }
     if (map[tab]) return map[tab]
 
@@ -897,14 +1316,14 @@ export default function App() {
       <div className="page">
         <div className="page-cols">
           <div className="col-main">
-            <AIChat chatRef={chatRef} />
+            <AIChat chatRef={chatRef} isAdmin={isAdmin} />
             <TransactionsCard toast={toast} />
-            <OverdueCard toast={toast} />
+            <OverdueCard toast={toast} isAdmin={isAdmin} />
             <AlertsCard toast={toast} />
-            <WorkflowsCard toast={toast} />
+            <WorkflowsCard toast={toast} isAdmin={isAdmin} />
             <RevenueCard />
           </div>
-          <Sidebar toast={toast} />
+          <Sidebar toast={toast} isAdmin={isAdmin} />
         </div>
       </div>
     )
@@ -912,7 +1331,12 @@ export default function App() {
 
   return (
     <>
-      <Topbar tab={tab} setTab={setTab} />
+      <Topbar
+        tab={tab}
+        setTab={setTab}
+        user={auth.user}
+        onSignOut={() => { auth.signOut(); setTab('Dashboard') }}
+      />
       {tab === 'Dashboard' && <><Hero onChat={goChat} /><KPIStrip /></>}
       <main>{renderTab()}</main>
       <StackStrip />
