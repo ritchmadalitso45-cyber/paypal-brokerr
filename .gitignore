@@ -26,3 +26,21 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+backend/*.db
+backend/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+deploy/contabo/.env
+deploy/contabo/secrets/
+.vercel/
+test-results/
+playwright-report/
+.vercel
+.env*
+
+deploy/contabo/.elastic.env
+deploy/contabo/elastic-certs/
+
+# Publish templates, never filled environment files
+!**/.env.example

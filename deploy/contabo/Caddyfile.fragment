@@ -1,0 +1,6 @@
+broker.95.111.247.118.sslip.io {
+    request_body {
+        max_size 256KB
+    }
+    reverse_proxy paypal-broker-api:8000
+}

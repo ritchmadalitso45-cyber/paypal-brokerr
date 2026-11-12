@@ -1,0 +1,70 @@
+name: paypal-broker
+services:
+  database:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: broker
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set database password}
+    volumes: ["database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U broker"]
+      interval: 5s
+      retries: 20
+    networks: [private]
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis:/data"]
+    networks: [private]
+  migrate:
+    build: ../../backend
+    env_file: .env
+    environment: &environment
+      DATABASE_URL: postgresql+psycopg://broker:${POSTGRES_PASSWORD}@database/broker
+      REDIS_URL: redis://redis:6379/0
+    command: ["alembic", "upgrade", "head"]
+    networks: [private]
+    depends_on:
+      database: {condition: service_healthy}
+  api:
+    build: ../../backend
+    restart: unless-stopped
+    env_file: .env
+    environment: *environment
+    expose: ["8000"]
+    volumes: ["./secrets:/run/secrets:ro"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+    networks:
+      private:
+      edge:
+        aliases: [paypal-broker-api]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 30s
+      retries: 5
+    logging: &logging
+      driver: json-file
+      options: {max-size: "5m", max-file: "3"}
+  worker:
+    build: ../../backend
+    restart: unless-stopped
+    env_file: .env
+    environment: *environment
+    command: ["python", "-m", "copilot.worker"]
+    networks: [private]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    logging: *logging
+volumes:
+  database:
+  redis:
+networks:
+  private:
+  edge:
+    external: true
+    name: oracle_default

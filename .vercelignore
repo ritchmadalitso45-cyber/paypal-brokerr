@@ -1,0 +1,9 @@
+backend/
+deploy/
+tests/
+test-results/
+playwright-report/
+node_modules/
+.git/
+.env*
+*.tar.gz
